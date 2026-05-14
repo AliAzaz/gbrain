@@ -4,7 +4,7 @@ Your AI agent is smart but forgetful. GBrain gives it a brain.
 
 Built by the President and CEO of Y Combinator to run his actual AI agents. The production brain powering his OpenClaw and Hermes deployments: **17,888 pages, 4,383 people, 723 companies**, 21 cron jobs running autonomously, built in 12 days. The agent ingests meetings, emails, tweets, voice calls, and original ideas while you sleep. It enriches every person and company it encounters. It fixes its own citations and consolidates memory overnight. You wake up and the brain is smarter than when you went to bed.
 
-The brain wires itself. Every page write extracts entity references and creates typed links (`attended`, `works_at`, `invested_in`, `founded`, `advises`) with zero LLM calls. Hybrid search. Self-wiring knowledge graph. Structured timeline. Backlink-boosted ranking. Ask "who works at Acme AI?" or "what did Bob invest in this quarter?" and get answers vector search alone can't reach. Benchmarked side-by-side against the category: gbrain lands **P@5 49.1%, R@5 97.9%** on a 240-page Opus-generated rich-prose corpus, beating its own graph-disabled variant by **+31.4 points P@5** and ripgrep-BM25 + vector-only RAG by a similar margin. The graph layer plus v0.12 extract quality together carry the gap. Full BrainBench scorecards + corpus live in the sibling [gbrain-evals](https://github.com/garrytan/gbrain-evals) repo.
+The brain wires itself. Every page write extracts entity references and creates typed links (`attended`, `works_at`, `invested_in`, `founded`, `advises`) with zero LLM calls. Hybrid search. Self-wiring knowledge graph. Structured timeline. Backlink-boosted ranking. Ask "who works at Acme AI?" or "what did Bob invest in this quarter?" and get answers vector search alone can't reach. Benchmarked side-by-side against the category: gbrain lands **P@5 49.1%, R@5 97.9%** on a 240-page Opus-generated rich-prose corpus, beating its own graph-disabled variant by **+31.4 points P@5** and ripgrep-BM25 + vector-only RAG by a similar margin. The graph layer plus v0.12 extract quality together carry the gap. Full BrainBench scorecards + corpus live in the sibling [gbrain-evals](https://github.com/aliazaz/gbrain-evals) repo.
 
 GBrain is those patterns, generalized. 34 skills. Install in 30 minutes. Your agent does the work. As Garry's personal agent gets smarter, so does yours.
 
@@ -33,20 +33,20 @@ Paste this into your agent:
 
 ```
 Retrieve and follow the instructions at:
-https://raw.githubusercontent.com/garrytan/gbrain/master/INSTALL_FOR_AGENTS.md
+https://raw.githubusercontent.com/aliazaz/gbrain/master/INSTALL_FOR_AGENTS.md
 ```
 
 That's it. The agent clones the repo, installs GBrain, sets up the brain, loads 34 skills, and configures recurring jobs. You answer a few questions about API keys. ~30 minutes.
 
 If your agent doesn't auto-read `AGENTS.md`, point it at that file first:
-`https://raw.githubusercontent.com/garrytan/gbrain/master/AGENTS.md` is the non-Claude
+`https://raw.githubusercontent.com/aliazaz/gbrain/master/AGENTS.md` is the non-Claude
 agent operating protocol (install, read order, trust boundary, common tasks). For
 the full doc map, use `llms.txt` at the same URL root.
 
 ### Standalone CLI (no agent)
 
 ```bash
-git clone https://github.com/garrytan/gbrain.git && cd gbrain && bun install && bun link
+git clone https://github.com/aliazaz/gbrain.git && cd gbrain && bun install && bun link
 gbrain init                     # local brain, ready in 2 seconds
                                 # picks a search mode (conservative / balanced / tokenmax)
 gbrain import ~/notes/          # index your markdown
@@ -74,18 +74,18 @@ Non-TTY installs auto-pick `balanced` and print a hint pointing at
 data-driven recommendations. Methodology + eval results live at
 [docs/eval/SEARCH_MODE_METHODOLOGY.md](docs/eval/SEARCH_MODE_METHODOLOGY.md).
 
-**Do NOT use `bun install -g github:garrytan/gbrain`.** Bun blocks the top-level
+**Do NOT use `bun install -g github:aliazaz/gbrain`.** Bun blocks the top-level
 postinstall hook on global installs, so schema migrations never run and the CLI
 aborts with `Aborted()` the first time it opens PGLite. Use `git clone + bun install
-&& bun link` as shown above. See [#218](https://github.com/garrytan/gbrain/issues/218).
+&& bun link` as shown above. See [#218](https://github.com/aliazaz/gbrain/issues/218).
 
 **Do NOT use `bun add -g gbrain` or `npm install -g gbrain`.** The npm registry
 has an unrelated package squatting that name (`gbrain@1.3.x`) — you'd silently
 install the wrong binary and overwrite the canonical one. v0.28.5+ detects this
 and prints a recovery message on `gbrain upgrade`, but the `git clone + bun link`
 path above is the only reliable install method until we publish under
-`@garrytan/gbrain` (tracked v0.29 follow-up). See
-[#658](https://github.com/garrytan/gbrain/issues/658).
+`@aliazaz/gbrain` (tracked v0.29 follow-up). See
+[#658](https://github.com/aliazaz/gbrain/issues/658).
 
 ```
 3 results (hybrid search, 0.12s):
@@ -148,7 +148,7 @@ Per-client guides: [`docs/mcp/`](docs/mcp/DEPLOY.md). Hardening defaults, env va
 
 ### Using gbrain with GStack
 
-If your engineering agent runs on [GStack](https://github.com/garrytan/gstack), point it at gbrain for code lookup instead of grep+read. Cathedral II (v0.21.0) ships call-graph edges and two-pass retrieval — `/investigate`, `/review`, `/plan-eng-review`, and `/office-hours` all benefit when the agent walks the symbol graph instead of scanning files line by line.
+If your engineering agent runs on [GStack](https://github.com/aliazaz/gstack), point it at gbrain for code lookup instead of grep+read. Cathedral II (v0.21.0) ships call-graph edges and two-pass retrieval — `/investigate`, `/review`, `/plan-eng-review`, and `/office-hours` all benefit when the agent walks the symbol graph instead of scanning files line by line.
 
 The five magical-moment commands:
 
@@ -166,7 +166,7 @@ All five auto-emit JSON on non-TTY (gh-CLI convention) so a GStack subagent shel
 
 GBrain ships 34 skills organized by `skills/RESOLVER.md` (or your OpenClaw's `AGENTS.md` — both filenames are supported as of v0.19). The resolver tells your agent which skill to read for any task. v0.25.1 added 9 research-flavored skills (`book-mirror` flagship plus 8 pairings); see the new "Research and synthesis" section below.
 
-[Skill files are code.](https://x.com/garrytan/status/2042925773300908103) They're the most powerful way to get knowledge work done. A skill file is a fat markdown document that encodes an entire workflow: when to fire, what to check, how to chain with other skills, what quality bar to enforce. The agent reads the skill and executes it. Skills can also call deterministic TypeScript code bundled in GBrain (search, import, embed, sync) for the parts that shouldn't be left to LLM judgment. [Thin harness, fat skills](docs/ethos/THIN_HARNESS_FAT_SKILLS.md): the intelligence lives in the skills, not the runtime.
+[Skill files are code.](https://x.com/aliazaz/status/2042925773300908103) They're the most powerful way to get knowledge work done. A skill file is a fat markdown document that encodes an entire workflow: when to fire, what to check, how to chain with other skills, what quality bar to enforce. The agent reads the skill and executes it. Skills can also call deterministic TypeScript code bundled in GBrain (search, import, embed, sync) for the parts that shouldn't be left to LLM judgment. [Thin harness, fat skills](docs/ethos/THIN_HARNESS_FAT_SKILLS.md): the intelligence lives in the skills, not the runtime.
 
 ### Always-on
 
@@ -284,7 +284,7 @@ Here's my personal OpenClaw deployment: one Render container. Supabase Postgres 
 
 Under that 19-cron load, sub-agent spawn couldn't clear the 10-second gateway wall. Minions landed it in under a second for zero tokens. **Scaling:** 19,240 posts across 36 months, single bash loop, ~15 min total, $0.00. Sub-agents: ~9 min best case, ~$1.08 in tokens, ~40% spawn failure. **Lab:** durability ∞ (SIGKILL mid-flight, 10/10 rescued), throughput ~10× faster, fan-out ~21× with no failure wall, memory ~400× less.
 
-Full benchmarks live in [gbrain-evals](https://github.com/garrytan/gbrain-evals/tree/main/docs/benchmarks).
+Full benchmarks live in [gbrain-evals](https://github.com/aliazaz/gbrain-evals/tree/main/docs/benchmarks).
 
 ### The routing rule
 
@@ -483,9 +483,9 @@ Run `gbrain integrations` to see status.
 
 ## GBrain + GStack
 
-[GStack](https://github.com/garrytan/gstack) is the engine. GBrain is the mod.
+[GStack](https://github.com/aliazaz/gstack) is the engine. GBrain is the mod.
 
-- **[GStack](https://github.com/garrytan/gstack)** = coding skills (ship, review, QA, investigate, office-hours, retro). 70,000+ stars, 30,000 developers per day. When your agent codes on itself, it uses GStack.
+- **[GStack](https://github.com/aliazaz/gstack)** = coding skills (ship, review, QA, investigate, office-hours, retro). 70,000+ stars, 30,000 developers per day. When your agent codes on itself, it uses GStack.
 - **GBrain** = everything-else skills (brain ops, signal detection, ingestion, enrichment, cron, reports, identity). When your agent remembers, thinks, and operates, it uses GBrain.
 - **`hosts/gbrain.ts`** = the bridge. Tells GStack's coding skills to check the brain before coding.
 
@@ -564,7 +564,7 @@ gbrain extract links --source db        # wire up the existing 29K pages
 gbrain extract timeline --source db     # extract dated events from markdown timelines
 ```
 
-Then ask graph questions or watch the search ranking improve. Benchmarked side-by-side against ripgrep-BM25, vector-only RAG (same embedder), and gbrain-with-graph-disabled: gbrain lands **P@5 49.1%, R@5 97.9%** on a 240-page Opus-generated rich-prose corpus, beating hybrid-nograph by **+31.4 points P@5**. Isolate the contribution: v0.11→v0.12 moved the same gbrain codebase from P@5 22.1% → 49.1% on identical inputs, so typed-link extract quality is load-bearing. Full scorecards + reproducible corpus: [gbrain-evals](https://github.com/garrytan/gbrain-evals).
+Then ask graph questions or watch the search ranking improve. Benchmarked side-by-side against ripgrep-BM25, vector-only RAG (same embedder), and gbrain-with-graph-disabled: gbrain lands **P@5 49.1%, R@5 97.9%** on a 240-page Opus-generated rich-prose corpus, beating hybrid-nograph by **+31.4 points P@5**. Isolate the contribution: v0.11→v0.12 moved the same gbrain codebase from P@5 22.1% → 49.1% on identical inputs, so typed-link extract quality is load-bearing. Full scorecards + reproducible corpus: [gbrain-evals](https://github.com/aliazaz/gbrain-evals).
 
 ## Search
 
@@ -642,7 +642,7 @@ End-to-end on the BrainBench v1 corpus (240 rich-prose pages, before/after PR #1
 
 Plus 5 orthogonal capability checks (identity resolution, temporal queries,
 performance at 10K-page scale, robustness to malformed input, MCP operation
-contract). All pass. Full report: [gbrain-evals](https://github.com/garrytan/gbrain-evals).
+contract). All pass. Full report: [gbrain-evals](https://github.com/aliazaz/gbrain-evals).
 
 The point: each technique handles a class of inputs the others miss. Vector
 search misses exact slug refs; keyword catches them. Keyword misses conceptual
@@ -661,7 +661,7 @@ Call a phone number. Your AI answers. It knows who's calling, pulls their full c
   <img src="docs/images/voice-client.png" alt="Voice client connected" width="300" />
 </p>
 
-> [See it in action](https://x.com/garrytan/status/2043022208512172263)
+> [See it in action](https://x.com/aliazaz/status/2043022208512172263)
 
 The voice recipe ships with GBrain: [Voice-to-Brain](recipes/twilio-voice-brain.md). WebRTC works in a browser tab with zero setup. A real phone number is optional.
 
@@ -863,7 +863,7 @@ The skills in this repo are those patterns, generalized. What took 11 days to bu
 - [CHANGELOG.md](CHANGELOG.md) ... Version history
 
 **Benchmarks:**
-- [gbrain-evals](https://github.com/garrytan/gbrain-evals) ... BrainBench, the sibling repo that holds the eval harness, corpus, scorecards, and 4-adapter comparisons. Depends on gbrain; not installed alongside gbrain.
+- [gbrain-evals](https://github.com/aliazaz/gbrain-evals) ... BrainBench, the sibling repo that holds the eval harness, corpus, scorecards, and 4-adapter comparisons. Depends on gbrain; not installed alongside gbrain.
 
 ## Contributing
 

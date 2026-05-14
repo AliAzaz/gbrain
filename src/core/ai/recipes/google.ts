@@ -16,6 +16,12 @@ export const google: Recipe = {
       dims_options: [768, 1536, 3072],
       cost_per_1m_tokens_usd: 0.15,
       price_last_verified: '2026-04-20',
+      // gemini-embedding-001 accepts up to 100 inputs per batch request, each
+      // capped at 2048 tokens — total batch cap ~200K tokens. With the default
+      // safety_factor (0.8), the gateway pre-splits at ~160K and recursively
+      // halves on token-limit errors. Without this, large batches silently
+      // exceed Google's per-request cap and fail without a safety net.
+      max_batch_tokens: 200_000,
     },
     expansion: {
       models: ['gemini-2.0-flash', 'gemini-2.0-flash-lite'],
