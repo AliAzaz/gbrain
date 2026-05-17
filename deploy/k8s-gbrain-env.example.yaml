@@ -1,0 +1,35 @@
+# Example env block for a clawdbot / OpenClaw pod running gbrain with OpenRouter.
+#
+# Copy the `env:` entries into your Deployment spec. OPENROUTER_API_KEY must
+# come from a Secret — do not rely on inline `kubectl exec export` (it dies
+# when the exec session ends).
+#
+# GBRAIN_HOME must match bootstrap GBRAIN_HOME / GBRAIN_HOME default (/data/gbrain).
+#
+# See also: bootstrap-gbrain.sh, scripts/verify-gbrain-openrouter-env.sh
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clawdbot-example
+spec:
+  template:
+    spec:
+      containers:
+        - name: clawdbot
+          env:
+            - name: GBRAIN_HOME
+              value: "/data/gbrain"
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: openrouter-credentials
+                  key: api-key
+            - name: GBRAIN_EMBEDDING_MODEL
+              value: "openrouter:openai/text-embedding-3-large"
+            - name: GBRAIN_EMBEDDING_DIMENSIONS
+              value: "1536"
+            - name: GBRAIN_CHAT_MODEL
+              value: "openrouter:anthropic/claude-sonnet-4.5"
+            - name: GBRAIN_EXPANSION_MODEL
+              value: "openrouter:openai/gpt-4o-mini"

@@ -180,6 +180,11 @@
       "description": "Brain-augmented web research via Perplexity plus Opus; surfaces what is NEW vs already-known about a topic by cross-referencing against the brain first."
     },
     {
+      "name": "pureclaw-gbrain",
+      "path": "pureclaw-gbrain/SKILL.md",
+      "description": "OpenClaw PureClaw memory protocol: GBrain as persistent agent memory — wake discipline, Iron Laws, signal detector, put_page idiom, search-first, connector playbooks."
+    },
+    {
       "name": "archive-crawler",
       "path": "archive-crawler/SKILL.md",
       "description": "Universal archivist for personal file archives (Dropbox/B2/email exports). Filters for high-value content within an explicit gbrain.yml allow-list scan_paths gate."

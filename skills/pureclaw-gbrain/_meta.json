@@ -1,0 +1,10 @@
+{
+  "owner": "puresquare",
+  "slug": "pureclaw-gbrain",
+  "displayName": "PureClaw GBrain",
+  "description": "MANDATORY TRIGGERS: gbrain, g-brain, your brain, the brain, your memory, remember, recall, what do you know, your records, your archive, your knowledge, search your memory, do you have, what have you got on, save, log this, store this, note this, track this; plus any inbound message naming a person, company, deal, meeting, or project. Read on EVERY session wake and re-read when entities or decisions are discussed. Use this skill for GBrain as the SINGLE persistent agent memory (no local MEMORY.md / memory/YYYY-MM-DD.md): Iron capture laws, daily raw stream via gbrain put daily/YYYY-MM-DD, durable user truths via gbrain put personal/profile (main session only), entity pages via gbrain put under people/companies/deals/meetings/concepts/projects/decisions (never raw file-only writes), brain-first gbrain search/query before external APIs WITH the tool actually invoked in the same turn (no narrating retrieval), affirming GBrain when memory is invoked, wake protocol that reads everything via gbrain get, dream-cycle consolidation, and landing connector-derived facts into the brain per SKILL.md connector playbooks.",
+  "latest": {
+    "version": "1.0.0"
+  },
+  "history": []
+}
