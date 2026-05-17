@@ -48,6 +48,18 @@ export function isValidVoyageOutputDim(dims: number): boolean {
 }
 
 /**
+ * True when the wire model id is OpenAI's text-embedding-3 family (Matryoshka).
+ * Handles bare ids (`text-embedding-3-large`) and upstream-prefixed ids used by
+ * OpenRouter / LiteLLM (`openai/text-embedding-3-large`).
+ */
+export function isTextEmbedding3ModelId(modelId: string): boolean {
+  if (modelId.startsWith('text-embedding-3')) return true;
+  const slash = modelId.indexOf('/');
+  if (slash === -1) return false;
+  return modelId.slice(slash + 1).startsWith('text-embedding-3');
+}
+
+/**
  * Build the providerOptions blob for embedMany() that pins output dimensions.
  *
  * Matryoshka providers (OpenAI text-embedding-3, Gemini embedding-001) can be
@@ -65,7 +77,7 @@ export function dimsProviderOptions(
   switch (implementation) {
     case 'native-openai': {
       // text-embedding-3-* supports dimensions; text-embedding-ada-002 does not.
-      if (modelId.startsWith('text-embedding-3')) {
+      if (isTextEmbedding3ModelId(modelId)) {
         return { openai: { dimensions: dims } };
       }
       return undefined;
@@ -104,11 +116,11 @@ export function dimsProviderOptions(
         return { openaiCompatible: { dimensions: dims } };
       }
       // OpenAI text-embedding-3 family on the openai-compatible adapter
-      // (Azure OpenAI hosts these via its OpenAI-compatible /embeddings
-      // endpoint). The provider defaults to the model's native size (3072
-      // for `-large`, 1536 for `-small`); without `dimensions`, brains
-      // configured for a smaller width (e.g. 1536) hard-fail at first embed.
-      if (modelId.startsWith('text-embedding-3')) {
+      // (Azure OpenAI, OpenRouter `openai/text-embedding-3-*`, etc.). The
+      // provider defaults to the model's native size (3072 for `-large`,
+      // 1536 for `-small`); without `dimensions`, brains configured for a
+      // smaller width (e.g. 1536) hard-fail at first embed.
+      if (isTextEmbedding3ModelId(modelId)) {
         return { openaiCompatible: { dimensions: dims } };
       }
       // DashScope text-embedding-v3 (Matryoshka 64-1024) and Zhipu

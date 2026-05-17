@@ -14,6 +14,7 @@ import {
   dimsProviderOptions,
   VOYAGE_VALID_OUTPUT_DIMS,
   isValidVoyageOutputDim,
+  isTextEmbedding3ModelId,
 } from '../../src/core/ai/dims.ts';
 import { AIConfigError } from '../../src/core/ai/errors.ts';
 
@@ -140,6 +141,15 @@ describe('dims.dimsProviderOptions', () => {
   test('OpenAI text-embedding-3 returns dimensions param', () => {
     const opts = dimsProviderOptions('native-openai', 'text-embedding-3-large', 1536);
     expect(opts).toEqual({ openai: { dimensions: 1536 } });
+  });
+
+  test('OpenRouter openai/text-embedding-3-* returns dimensions on openai-compat path', () => {
+    expect(isTextEmbedding3ModelId('openai/text-embedding-3-large')).toBe(true);
+    expect(isTextEmbedding3ModelId('openai/text-embedding-3-small')).toBe(true);
+    expect(dimsProviderOptions('openai-compatible', 'openai/text-embedding-3-large', 1536))
+      .toEqual({ openaiCompatible: { dimensions: 1536 } });
+    expect(dimsProviderOptions('openai-compatible', 'openai/text-embedding-3-small', 512))
+      .toEqual({ openaiCompatible: { dimensions: 512 } });
   });
 
   test('OpenAI ada-002 returns undefined (no dim param)', () => {

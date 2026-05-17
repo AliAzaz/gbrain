@@ -23,6 +23,10 @@
 #                          (default: "GBrain Bootstrap")
 #   GBRAIN_AUTHOR_EMAIL  — git commit author email for the scaffolded template
 #                          (default: bootstrap@gbrain.local)
+#   GBRAIN_EMBEDDING_MODEL      — override embedding route (default:
+#                          openrouter:openai/text-embedding-3-large)
+#   GBRAIN_EMBEDDING_DIMENSIONS — vector width (default: 1536)
+#   GBRAIN_CHAT_MODEL / GBRAIN_EXPANSION_MODEL — OpenRouter chat/expansion ids
 #
 # Exit codes:
 #   0   bootstrap complete + smoke probes green
@@ -37,6 +41,39 @@ set -euo pipefail
 # -- logging ------------------------------------------------------------------
 log() { echo "[bootstrap-gbrain $(date -u +%FT%TZ)] $*" >&2; }
 fail() { log "ERROR: $*"; exit "${2:-1}"; }
+
+# Merge OpenRouter routing into $GBRAIN_HOME/.gbrain/config.json (file-plane).
+# The gateway reads embedding_model from env OR this file — NOT from
+# `gbrain config set` (DB plane). Without this, shells that skip the wrapper
+# or /etc/profile.d fall back to openai:text-embedding-3-large and fail with
+# "OpenAI embedding requires OPENAI_API_KEY".
+persist_gbrain_file_config() {
+  local config_path="$BRAIN_DATA/.gbrain/config.json"
+  local db_path="$BRAIN_DATA/.gbrain/brain.pglite"
+  mkdir -p "$(dirname "$config_path")"
+  CONFIG_PATH="$config_path" \
+  DB_PATH="$db_path" \
+  EMBED_MODEL="$GBRAIN_EMBEDDING_MODEL" \
+  EMBED_DIMS="$GBRAIN_EMBEDDING_DIMENSIONS" \
+  CHAT_MODEL="$GBRAIN_CHAT_MODEL" \
+  EXPANSION_MODEL="$GBRAIN_EXPANSION_MODEL" \
+  bun -e '
+    const fs = require("fs");
+    const path = require("path");
+    const p = process.env.CONFIG_PATH;
+    let cfg = {};
+    try { cfg = JSON.parse(fs.readFileSync(p, "utf8")); } catch {}
+    cfg.engine = cfg.engine || "pglite";
+    if (!cfg.database_path) cfg.database_path = process.env.DB_PATH;
+    cfg.embedding_model = process.env.EMBED_MODEL;
+    cfg.embedding_dimensions = parseInt(process.env.EMBED_DIMS, 10);
+    cfg.expansion_model = process.env.EXPANSION_MODEL;
+    cfg.chat_model = process.env.CHAT_MODEL;
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, JSON.stringify(cfg, null, 2) + "\n", { mode: 0o600 });
+  ' || fail "failed to persist OpenRouter routing to $config_path" 3
+  log "Persisted OpenRouter routing to $config_path (survives shells without GBRAIN_EMBEDDING_MODEL)"
+}
 
 # -- scaffold_brain_template <target-dir> -------------------------------------
 # Creates the MECE directory structure described in
@@ -573,6 +610,13 @@ BRAIN_DATA="${GBRAIN_HOME:-/data/gbrain}"
 
 export GBRAIN_HOME="$BRAIN_DATA"
 export HOME="${HOME:-/root}"        # k8s containers sometimes leave HOME unset
+# OpenRouter routing defaults (override via env before bootstrap). Used by the
+# gbrain wrapper, profile.d, init flags, and persist_gbrain_file_config().
+GBRAIN_EMBEDDING_MODEL="${GBRAIN_EMBEDDING_MODEL:-openrouter:openai/text-embedding-3-large}"
+GBRAIN_EMBEDDING_DIMENSIONS="${GBRAIN_EMBEDDING_DIMENSIONS:-1536}"
+GBRAIN_CHAT_MODEL="${GBRAIN_CHAT_MODEL:-openrouter:anthropic/claude-sonnet-4.5}"
+GBRAIN_EXPANSION_MODEL="${GBRAIN_EXPANSION_MODEL:-openrouter:openai/gpt-4o-mini}"
+export GBRAIN_EMBEDDING_MODEL GBRAIN_EMBEDDING_DIMENSIONS GBRAIN_CHAT_MODEL GBRAIN_EXPANSION_MODEL
 mkdir -p "$BRAIN_DATA" "$(dirname "$INSTALL_DIR")"
 
 log "config: REPO=$REPO BRANCH=$BRANCH"
@@ -621,30 +665,138 @@ bun install --frozen-lockfile >/dev/null 2>&1 || bun install >/dev/null 2>&1 || 
 log "Linking gbrain binary..."
 bun link >/dev/null 2>&1 || true   # idempotent; second run is a no-op or warning
 
-# Defensive: if 'gbrain' didn't end up on PATH, install a wrapper script
-if ! command -v gbrain >/dev/null 2>&1; then
-  log "bun link did not expose 'gbrain' on PATH — installing wrapper at /usr/local/bin/gbrain"
-  cat > /usr/local/bin/gbrain <<EOF
-#!/usr/bin/env bash
-export PATH="\$HOME/.bun/bin:\$PATH"
-exec bun run "$INSTALL_DIR/src/cli.ts" "\$@"
-EOF
-  chmod +x /usr/local/bin/gbrain
+# Resolve absolute paths to bun + gbrain entrypoint NOW, bake into wrapper.
+# This avoids reliance on HOME being set when the wrapper runs (the agent
+# process may have a different HOME or none at all).
+BUN_BIN="$(command -v bun || echo "$HOME/.bun/bin/bun")"
+GBRAIN_CLI="$INSTALL_DIR/src/cli.ts"
+
+# Install an env-injecting wrapper at BOTH /usr/local/bin/gbrain AND
+# $HOME/.bun/bin/gbrain (overwriting bun's link wrapper). Reason: bun's
+# install adds $HOME/.bun/bin to PATH ahead of /usr/local/bin in the
+# user's shell, so a wrapper only at /usr/local/bin gets shadowed.
+# Overwriting both ensures every caller — agent process, kubectl exec
+# shell, cron, anything — gets the env injection regardless of PATH order.
+#
+# No recursion concern: each wrapper exec's `bun run <cli.ts>` directly,
+# not the other wrapper.
+log "Installing env-injecting gbrain wrappers (both /usr/local/bin/ and ~/.bun/bin/)..."
+
+WRAPPER_BODY="#!/usr/bin/env bash
+# gbrain env-injecting wrapper — written by bootstrap-gbrain.sh on $(date -u +%FT%TZ).
+# Guarantees GBRAIN_HOME + OpenRouter routing are set for every gbrain
+# invocation, regardless of the caller's environment state. The k8s
+# Deployment YAML env block is the canonical fix; this wrapper is the
+# defense-in-depth fallback so deployments without that block still work.
+
+# Brain location
+export GBRAIN_HOME=\"\${GBRAIN_HOME:-$BRAIN_DATA}\"
+
+# OpenRouter routing (file/env-plane only — gbrain config set does NOT
+# propagate these — honor any overrides the caller already set).
+export GBRAIN_EMBEDDING_MODEL=\"\${GBRAIN_EMBEDDING_MODEL:-$GBRAIN_EMBEDDING_MODEL}\"
+export GBRAIN_EMBEDDING_DIMENSIONS=\"\${GBRAIN_EMBEDDING_DIMENSIONS:-$GBRAIN_EMBEDDING_DIMENSIONS}\"
+export GBRAIN_CHAT_MODEL=\"\${GBRAIN_CHAT_MODEL:-$GBRAIN_CHAT_MODEL}\"
+export GBRAIN_EXPANSION_MODEL=\"\${GBRAIN_EXPANSION_MODEL:-$GBRAIN_EXPANSION_MODEL}\"
+
+# OPENROUTER_API_KEY is intentionally NOT injected here — it MUST come
+# from the k8s Secret via the container's env. If it's missing, gbrain
+# will fail loudly on the first provider call rather than appear to work
+# with a stale baked-in value.
+
+# Exec bun directly against the CLI entrypoint (absolute paths baked in
+# at install time so the wrapper doesn't depend on HOME or PATH).
+exec \"$BUN_BIN\" run \"$GBRAIN_CLI\" \"\$@\"
+"
+
+# Write the wrapper to /usr/local/bin/gbrain (regular file, fresh write).
+echo "$WRAPPER_BODY" > /usr/local/bin/gbrain
+chmod 0755 /usr/local/bin/gbrain
+
+# Replace the bun-linked entry at $HOME/.bun/bin/gbrain with the wrapper.
+# CRITICAL: `bun link` creates this as a SYMLINK pointing at
+# /opt/gbrain/src/cli.ts. A naive `> ~/.bun/bin/gbrain` would dereference
+# the symlink and CORRUPT cli.ts (we hit this bug once already). Always
+# `rm` first to delete the symlink (which doesn't touch the target),
+# then write a fresh regular file in its place.
+#
+# Why we need this: bun's installer puts ~/.bun/bin at the front of PATH.
+# If we leave the symlink in place, the symlink wins over the wrapper at
+# /usr/local/bin/gbrain — and the agent process calling `gbrain` skips
+# the env injection. Replacing the symlink with the same wrapper makes
+# every PATH-resolved call inject env, regardless of which path wins.
+if [[ -L "$HOME/.bun/bin/gbrain" ]] || [[ -e "$HOME/.bun/bin/gbrain" ]]; then
+  rm -f "$HOME/.bun/bin/gbrain"   # `rm` removes the symlink, NOT its target
+  echo "$WRAPPER_BODY" > "$HOME/.bun/bin/gbrain"
+  chmod 0755 "$HOME/.bun/bin/gbrain"
+  log "Replaced bun-linked entry at $HOME/.bun/bin/gbrain with env-injecting wrapper (symlink removed first to avoid corrupting cli.ts)"
 fi
 
 command -v gbrain >/dev/null 2>&1 || fail "gbrain binary missing after install" 2
 log "gbrain version: $(gbrain --version 2>/dev/null || echo unknown)"
+log "Wrappers installed at both /usr/local/bin/gbrain AND $HOME/.bun/bin/gbrain."
+log "Note: re-running 'bun link' would recreate the symlink at \$HOME/.bun/bin/gbrain"
+log "and clobber the wrapper there. The canonical fix is the k8s Deployment YAML"
+log "env block — see deploy/k8s-gbrain-env.example.yaml and /etc/profile.d/gbrain.sh."
 
-# -- 6. Set OpenRouter env vars (file/env-plane, gateway reads these) ---------
+# -- 6. Persist OpenRouter env for the agent process --------------------------
 # These keys size the vector index and are file/env-only by design in gbrain
 # (`gbrain config set` does NOT propagate them — see src/core/config.ts:191).
-export GBRAIN_EMBEDDING_MODEL="openrouter:openai/text-embedding-3-small"
-export GBRAIN_EMBEDDING_DIMENSIONS=1536
-export GBRAIN_CHAT_MODEL="openrouter:anthropic/claude-sonnet-4.5"
-export GBRAIN_EXPANSION_MODEL="openrouter:openai/gpt-4o-mini"
-
+#
+# Critical: the bootstrap's `export` only lives in the bootstrap's shell scope.
+# When this script exits, the agent process — started by the container's
+# entrypoint, NOT by this script — never sees them unless we also write
+# /etc/profile.d/gbrain.sh, /etc/environment, AND $GBRAIN_HOME/.gbrain/config.json.
 log "Routing: embed=$GBRAIN_EMBEDDING_MODEL dims=$GBRAIN_EMBEDDING_DIMENSIONS"
 log "Routing: chat=$GBRAIN_CHAT_MODEL expansion=$GBRAIN_EXPANSION_MODEL"
+
+# Persist to /etc/profile.d/ — every new login/non-login shell sources this
+# (assuming the container's shell is bash and respects /etc/profile.d/, which
+# is the default for Ubuntu/Debian/Alpine/RHEL). Skip if we can't write
+# (rootless container, read-only fs).
+PROFILE_FILE="/etc/profile.d/gbrain.sh"
+if [[ -w "/etc/profile.d" ]] || [[ ! -e "$PROFILE_FILE" && -w "/etc" ]]; then
+  cat > "$PROFILE_FILE" <<EOF
+# gbrain — written by bootstrap-gbrain.sh on $(date -u +%FT%TZ)
+# Source: $REPO @ $BRANCH
+export GBRAIN_HOME="$BRAIN_DATA"
+export GBRAIN_EMBEDDING_MODEL="$GBRAIN_EMBEDDING_MODEL"
+export GBRAIN_EMBEDDING_DIMENSIONS="$GBRAIN_EMBEDDING_DIMENSIONS"
+export GBRAIN_CHAT_MODEL="$GBRAIN_CHAT_MODEL"
+export GBRAIN_EXPANSION_MODEL="$GBRAIN_EXPANSION_MODEL"
+# OPENROUTER_API_KEY is supplied by the k8s Secret at pod start.
+# Add gbrain binary path defensively (bun link sometimes lands here).
+case ":\$PATH:" in
+  *":\$HOME/.bun/bin:"*) ;;
+  *) export PATH="\$HOME/.bun/bin:\$PATH" ;;
+esac
+EOF
+  chmod 0644 "$PROFILE_FILE"
+  log "Persisted env to $PROFILE_FILE (new shells will inherit GBRAIN_HOME, model routing, and PATH)"
+else
+  log "warn: /etc/profile.d/ not writable; agent process may need env set in k8s Deployment yaml instead"
+fi
+
+# Also write to /etc/environment for non-shell PID 1 children (some init
+# systems read this; Docker/k8s entrypoints typically don't, but it's free).
+ENV_FILE="/etc/environment"
+if [[ -w "$ENV_FILE" ]] || [[ ! -e "$ENV_FILE" && -w "/etc" ]]; then
+  # Remove any prior gbrain block, then append fresh
+  if [[ -e "$ENV_FILE" ]]; then
+    sed -i.bak '/^# gbrain-bootstrap-begin/,/^# gbrain-bootstrap-end/d' "$ENV_FILE" 2>/dev/null || true
+    rm -f "${ENV_FILE}.bak"
+  fi
+  cat >> "$ENV_FILE" <<EOF
+# gbrain-bootstrap-begin (written $(date -u +%FT%TZ))
+GBRAIN_HOME=$BRAIN_DATA
+GBRAIN_EMBEDDING_MODEL=$GBRAIN_EMBEDDING_MODEL
+GBRAIN_EMBEDDING_DIMENSIONS=$GBRAIN_EMBEDDING_DIMENSIONS
+GBRAIN_CHAT_MODEL=$GBRAIN_CHAT_MODEL
+GBRAIN_EXPANSION_MODEL=$GBRAIN_EXPANSION_MODEL
+# gbrain-bootstrap-end
+EOF
+  log "Persisted env to $ENV_FILE (PID-1 children that read /etc/environment will inherit)"
+fi
 
 # -- 7. Initialize the brain (idempotent) -------------------------------------
 # PGLite stores its files under $GBRAIN_HOME/.gbrain/. If the dir exists, init
@@ -654,11 +806,19 @@ if [[ ! -e "$BRAIN_DB" ]]; then
   log "Initializing brain at $BRAIN_DATA..."
   # Pipe empty stdin so the search-mode picker auto-accepts the default
   # (gbrain detects non-TTY and respects it; this is belt + suspenders).
-  printf '\n' | gbrain init --pglite || fail "gbrain init failed" 3
+  printf '\n' | gbrain init --pglite \
+    --embedding-model "$GBRAIN_EMBEDDING_MODEL" \
+    --embedding-dimensions "$GBRAIN_EMBEDDING_DIMENSIONS" \
+    --expansion-model "$GBRAIN_EXPANSION_MODEL" \
+    --chat-model "$GBRAIN_CHAT_MODEL" \
+    || fail "gbrain init failed" 3
 else
   log "Brain already initialized at $BRAIN_DATA (running migrations only)..."
   gbrain apply-migrations --yes >/dev/null 2>&1 || log "warn: apply-migrations exited non-zero; continuing"
 fi
+
+# File-plane routing: survives kubectl exec shells that skip profile.d / wrapper.
+persist_gbrain_file_config
 
 # -- 8. Health checks ---------------------------------------------------------
 log "Running gbrain doctor..."
@@ -695,8 +855,8 @@ probe_provider() {
   log "OpenRouter $touchpoint probe: OK"
 }
 
-probe_provider embedding openrouter:openai/text-embedding-3-small
-probe_provider chat      openrouter:anthropic/claude-sonnet-4.5
+probe_provider embedding "$GBRAIN_EMBEDDING_MODEL"
+probe_provider chat      "$GBRAIN_CHAT_MODEL"
 
 # -- 9. Brain content: clone existing repo OR scaffold MECE template ---------
 # Precedence:
@@ -730,8 +890,17 @@ if [[ -d "$BRAIN_CONTENT" ]] && [[ -n "$(find "$BRAIN_CONTENT" -maxdepth 3 -name
   log "Importing brain content (no-embed)..."
   gbrain import "$BRAIN_CONTENT" --no-embed
   log "Embedding stale chunks..."
-  gbrain embed --stale
+  gbrain embed --stale || fail "gbrain embed --stale failed (check OPENROUTER_API_KEY and routing)" 3
   log "Brain content imported."
+fi
+
+# -- 9b. OpenRouter env verification (read-only) ------------------------------
+VERIFY_SCRIPT="$INSTALL_DIR/scripts/verify-gbrain-openrouter-env.sh"
+if [[ -x "$VERIFY_SCRIPT" ]]; then
+  log "Running OpenRouter env verification..."
+  GBRAIN_HOME="$BRAIN_DATA" "$VERIFY_SCRIPT" || fail "OpenRouter env verification failed; see output above" 3
+else
+  log "warn: $VERIFY_SCRIPT not found or not executable; skipping env verification"
 fi
 
 # -- 10. Final summary --------------------------------------------------------
