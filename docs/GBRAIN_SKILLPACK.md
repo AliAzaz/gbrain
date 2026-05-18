@@ -109,6 +109,7 @@ data sources to populate it:
 
 | Guide | What It Covers |
 |-------|---------------|
+| [PureClaw GBrain](../skills/pureclaw-gbrain/SKILL.md) | PureClaw / OpenClaw memory protocol: single-store capture, retrieval ladder, wake + dream, `gbrain put` discipline. Installed to **`$OPENCLAW_HOME/skills/pureclaw-gbrain/`** (e.g. `/root/.openclaw/skills/pureclaw-gbrain/`). Bootstrap: `configure-openclaw.sh` or `gbrain skillpack install pureclaw-gbrain --workspace "$OPENCLAW_WORKSPACE"` (`OPENCLAW_WORKSPACE` defaults to `$OPENCLAW_HOME`). |
 | [Cold Start](../skills/cold-start/SKILL.md) | Day-one bootstrapping: contacts, calendar, email, conversations, social, archives. Uses ClawVisor for safe credential handling — agents never hold raw API keys. |
 | [Ask User](../skills/ask-user/SKILL.md) | Choice-gate pattern for human input at decision points. Used by cold-start and other skills. |
 

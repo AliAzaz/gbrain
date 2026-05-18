@@ -1,16 +1,33 @@
 # PureClaw GBrain — Installation & Usage Guide
 
+## Path layout (bootstrap defaults)
+
+Matches `scripts/bootstrap/configure-openclaw.sh` and `configure-gbrain.sh`:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `OPENCLAW_HOME` | `~/.openclaw` (pod: `/root/.openclaw`) | OpenClaw home — `AGENTS.md`, `skills/`, `.env` |
+| `OPENCLAW_WORKSPACE` | **`$OPENCLAW_HOME`** (same directory) | Passed to `gbrain skillpack install --workspace` |
+| `GBRAIN_HOME` | `$OPENCLAW_HOME/data/gbrain` | Brain DB + `$GBRAIN_HOME/brain/` markdown repo |
+| `GBRAIN_INSTALL_DIR` | `/opt/gbrain` | GBrain CLI install + bundled skillpack **source** |
+
+**Installed skill location (bootstrap):** **`$OPENCLAW_HOME/skills/pureclaw-gbrain/`** — e.g. `/root/.openclaw/skills/pureclaw-gbrain/SKILL.md`.
+
+The agent resolves **`skills/pureclaw-gbrain/SKILL.md`** relative to `$OPENCLAW_WORKSPACE` (default `$OPENCLAW_HOME`).
+
+**Do not confuse** `$GBRAIN_INSTALL_DIR/skills/` (catalog at `/opt/gbrain/skills/`) with **`$OPENCLAW_HOME/skills/`** (what the running agent loads after install).
+
 ## Prerequisites
 
 - **`gbrain`** on `PATH` (CLI installed and wired to your brain deployment).
 - **A reachable brain** — database + embeddings configured the way your environment expects (e.g. Postgres/pgvector, Supabase, or a bundled PGLite layout). `gbrain doctor --fast` should succeed before you rely on the agent.
-- **An agent workspace with a `skills/` directory** — typically an [OpenClaw](https://openclaw.ai) workspace (folder containing root `AGENTS.md` and `skills/`).
+- **An agent workspace with a `skills/` directory** — typically `$OPENCLAW_WORKSPACE` (folder containing root `AGENTS.md` and `skills/`).
 
 ## How It Works
 
-This skill is **instruction-based**. The agent reads `SKILL.md` and follows the memory protocol: wake discipline, Iron Laws, `gbrain search` / `gbrain query` before escalating outward, and **`gbrain put`** for durable writes (record + DB + embeddings in one step).
+This skill is **instruction-based**. The agent reads `SKILL.md` and follows the memory protocol: wake discipline, Iron Laws, `gbrain search` / `gbrain query` before escalating outward, and **`gbrain put`** for durable writes.
 
-**Single store.** GBrain is the only persistent memory in this design — there is no parallel `MEMORY.md` or `memory/YYYY-MM-DD.md` file in the agent workspace. Daily stream goes to `gbrain put daily/YYYY-MM-DD`. Long-term user truths go to `gbrain put personal/profile` (main session only). Entity pages (`people/`, `companies/`, `deals/`, …) go through `gbrain put` the same way. If you are upgrading from an older skill version that wrote to local markdown, see the "Upgrading from local-file memory" section below.
+**GBrain store + brain repo.** Agent captures use **`gbrain put`** (DB + embeddings, searchable immediately). Markdown under **`$GBRAIN_HOME/brain/`** comes from bootstrap template, git clone, or manual edits; **cron** (`gbrain sync --repo "$GBRAIN_HOME/brain" && gbrain embed --stale`, or `gbrain autopilot --install`) keeps the DB aligned with files on disk. No workspace `MEMORY.md` — recall is **only** via `gbrain search` / `query` / `get`.
 
 There is no separate API key just for the skill — authentication is whatever your **GBrain deployment** already uses (`DATABASE_URL`, provider keys for embeddings/chat if applicable, etc.). If you also run **PureClaw Connect**, connector traffic can feed facts into GBrain; this skill defines how those facts get captured and retrieved.
 
@@ -19,20 +36,41 @@ There is no separate API key just for the skill — authentication is whatever y
 ### Option A — Copy the skill folder (same pattern as PureClaw Connect)
 
 ```bash
-mkdir -p /path/to/workspace/skills
-cp -r pureclaw-gbrain /path/to/workspace/skills/pureclaw-gbrain
+export OPENCLAW_HOME="${OPENCLAW_HOME:-$HOME/.openclaw}"
+export OPENCLAW_WORKSPACE="${OPENCLAW_WORKSPACE:-$OPENCLAW_HOME}"
+mkdir -p "$OPENCLAW_HOME/skills"
+cp -r "$GBRAIN_INSTALL_DIR/skills/pureclaw-gbrain" "$OPENCLAW_HOME/skills/pureclaw-gbrain"
+# Or from a local checkout: cp -r ./skills/pureclaw-gbrain "$OPENCLAW_HOME/skills/"
 ```
 
-Use your real OpenClaw workspace path for `/path/to/workspace` (often `~/.openclaw/workspace` or `$OPENCLAW_WORKSPACE`).
+### Option B — Bootstrap / skillpack (recommended)
 
-### Option B — From a GBrain repo checkout (skillpack)
+OpenClaw bootstrap (`configure-openclaw.sh`) copies from `$GBRAIN_INSTALL_DIR/skills/pureclaw-gbrain` → **`$OPENCLAW_HOME/skills/pureclaw-gbrain`** and runs:
 
 ```bash
-cd /path/to/gbrain
-gbrain skillpack install pureclaw-gbrain --workspace /path/to/workspace
+gbrain skillpack install pureclaw-gbrain --workspace "$OPENCLAW_WORKSPACE"
 ```
 
-Skillpack also copies **shared dependency files** listed in `openclaw.plugin.json` (conventions + brain filing rules) and updates the **`<!-- gbrain:skillpack:begin -->` … `<!-- gbrain:skillpack:end -->`** managed block in `AGENTS.md` or `RESOLVER.md`. Do not edit inside those markers by hand.
+Manual equivalent:
+
+```bash
+export OPENCLAW_HOME="${OPENCLAW_HOME:-$HOME/.openclaw}"
+export OPENCLAW_WORKSPACE="${OPENCLAW_WORKSPACE:-$OPENCLAW_HOME}"
+gbrain skillpack install pureclaw-gbrain --workspace "$OPENCLAW_WORKSPACE"
+```
+
+Skillpack copies into **`$OPENCLAW_HOME/skills/`** (not `/opt/gbrain` on the agent): `pureclaw-gbrain/`, shared **`skills/conventions/`** (including `cron-via-minions.md`), and brain filing rules. It updates the **`<!-- gbrain:skillpack:begin -->` … `<!-- gbrain:skillpack:end -->`** managed block in `$OPENCLAW_HOME/AGENTS.md` (or `RESOLVER.md`). Do not edit inside those markers by hand.
+
+**Prefer Option B over Option A** when possible: copy-only installs skip conventions; cron/dream scheduling in `SKILL.md` §9 assumes conventions may be present.
+
+**Optional add-ons** (install into the workspace):
+
+```bash
+gbrain skillpack install signal-detector --workspace "$OPENCLAW_WORKSPACE"
+gbrain skillpack install cold-start --workspace "$OPENCLAW_WORKSPACE"
+```
+
+Full catalog index: `$GBRAIN_INSTALL_DIR/docs/GBRAIN_SKILLPACK.md` (default `/opt/gbrain/docs/GBRAIN_SKILLPACK.md`).
 
 The directory should contain:
 
@@ -46,10 +84,12 @@ pureclaw-gbrain/
 
 ## Running the Skill
 
-1. **Workspace location** — Ensure the agent’s cwd / docs resolve paths relative to the workspace root (parent of `skills/`). Common convention:
+1. **Workspace location** — Ensure the agent’s cwd / docs resolve paths relative to `$OPENCLAW_WORKSPACE` (parent of `skills/`):
 
    ```bash
-   export OPENCLAW_WORKSPACE=/path/to/workspace
+   export OPENCLAW_HOME="${OPENCLAW_HOME:-$HOME/.openclaw}"
+   export OPENCLAW_WORKSPACE="${OPENCLAW_WORKSPACE:-$OPENCLAW_HOME}"
+   export GBRAIN_HOME="${GBRAIN_HOME:-$OPENCLAW_HOME/data/gbrain}"
    ```
 
 2. **Health check** — From the workspace (or anywhere `gbrain` is configured):
@@ -67,22 +107,23 @@ Reload or restart the host agent so it picks up `AGENTS.md`.
 After install:
 
 1. Paste or merge **`skills/pureclaw-gbrain/AGENTS.md`** into root **`AGENTS.md`** (outside the `gbrain:skillpack` fence).
-2. Run **`gbrain doctor --fast`** (and full **`gbrain doctor`** if anything looks wrong).
+2. Run **`gbrain doctor --fast`** (and full **`gbrain doctor`** if anything looks wrong). After skillpack install, run **`gbrain skillpack-check`** — exit 0 means routing + managed block are consistent.
 3. Send a short test message that names a placeholder entity, e.g.:
 
    > "Quick note: Halcyon Labs is evaluating us for a pilot next quarter."
 
    The agent should call `gbrain put companies/halcyon-labs` (and append to `daily/YYYY-MM-DD`) **without asking permission**, then confirm what was written. You can then `gbrain delete companies/halcyon-labs` if it was only a test.
 
-4. Verify the writes landed in GBrain (not on disk somewhere):
+4. Verify search (and optional on-disk export):
 
    ```bash
-   gbrain search "halcyon"            # should return the page
+   gbrain search "halcyon"
    gbrain get companies/halcyon-labs
    gbrain get daily/$(date +%Y-%m-%d)
+   gbrain config get sync.last_run   # after cron/autopilot has run
    ```
 
-   If the agent saved to a local `MEMORY.md` or `memory/YYYY-MM-DD.md` instead, the skill was not loaded correctly — re-check that `AGENTS.md` references `skills/pureclaw-gbrain/SKILL.md` and that the agent is reading it.
+   If the agent saved to workspace `MEMORY.md` / `memory/*.md` instead of using `gbrain put`, or answered from those files without `gbrain search`, the skill was not loaded correctly — re-check `AGENTS.md` and `skills/pureclaw-gbrain/SKILL.md`.
 
 ## Everyday Usage
 
@@ -104,10 +145,10 @@ If you ran an older version of this skill (or another OpenClaw memory skill) tha
 
 ```bash
 # Long-term truths → personal/profile (main-session only retrieval after this)
-cat /path/to/workspace/MEMORY.md | gbrain put personal/profile
+cat "$OPENCLAW_HOME/MEMORY.md" | gbrain put personal/profile
 
 # Daily stream → daily/<date> pages, one per file
-for f in /path/to/workspace/memory/*.md; do
+for f in "$OPENCLAW_HOME/memory/"*.md; do
   date_slug=$(basename "$f" .md)
   cat "$f" | gbrain put "daily/$date_slug"
 done
@@ -136,13 +177,13 @@ Each OpenClaw **workspace** has its own `skills/` tree and its own **`AGENTS.md`
 Remove the skill directory:
 
 ```bash
-rm -rf /path/to/workspace/skills/pureclaw-gbrain
+rm -rf "$OPENCLAW_HOME/skills/pureclaw-gbrain"
 ```
 
-Or from a GBrain checkout (updates the managed block when applicable):
+Or (updates the managed block when applicable):
 
 ```bash
-gbrain skillpack uninstall pureclaw-gbrain --workspace /path/to/workspace
+gbrain skillpack uninstall pureclaw-gbrain --workspace "$OPENCLAW_WORKSPACE"
 ```
 
 That removes the skill only. It does **not** delete brain data. If you deleted the folder by hand, ensure root **`AGENTS.md`** no longer references `skills/pureclaw-gbrain/SKILL.md`, or adjust the skillpack managed block so it stays consistent.

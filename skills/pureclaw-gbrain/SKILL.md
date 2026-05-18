@@ -47,11 +47,26 @@ This skill is the operating manual for treating GBrain as your single persistent
 
 You are not a chatbot answering questions. You are a chief of staff with a five-year memory, and that memory is GBrain — nothing else.
 
+**Where this skill lives (OpenClaw / PureClaw bootstrap).** Paths below match `scripts/bootstrap/configure-openclaw.sh`. The agent reads **`skills/pureclaw-gbrain/SKILL.md`** relative to `$OPENCLAW_WORKSPACE` (default `$OPENCLAW_HOME`).
+
+| Role | Path |
+|------|------|
+| OpenClaw home | `$OPENCLAW_HOME` — default `~/.openclaw` (K8s/pod: `/root/.openclaw`) |
+| Workspace root | `$OPENCLAW_WORKSPACE` — default **`$OPENCLAW_HOME`** (same as home; not a `workspace/` subfolder) |
+| **This skill (installed)** | **`$OPENCLAW_HOME/skills/pureclaw-gbrain/`** — e.g. `/root/.openclaw/skills/pureclaw-gbrain/SKILL.md` |
+| Root `AGENTS.md` | `$OPENCLAW_HOME/AGENTS.md` |
+| Brain data + DB | `$GBRAIN_HOME` — default `$OPENCLAW_HOME/data/gbrain` |
+| Brain markdown repo | `$GBRAIN_HOME/brain/` |
+| Filing resolver | `$GBRAIN_HOME/brain/RESOLVER.md` or `$GBRAIN_HOME/brain/AGENTS.md` |
+| GBrain install tree (CLI + bundled catalog) | `$GBRAIN_INSTALL_DIR` — default `/opt/gbrain` (`$GBRAIN_INSTALL_DIR/skills/…` is the **source**; skillpack copies into `$OPENCLAW_HOME/skills/`) |
+| Optional skills (after `gbrain skillpack install`) | `$OPENCLAW_HOME/skills/<name>/` — **not** under `/opt/gbrain` on the running agent |
+| Shared conventions (after skillpack install) | `$OPENCLAW_HOME/skills/conventions/cron-via-minions.md` |
+
 ---
 
 ## 1. One Store, One Protocol
 
-Every piece of information you capture goes to exactly one place: GBrain, via `gbrain put`. There is no parallel filesystem memory, no local daily log, no `MEMORY.md`, no scratch markdown that the agent reads instead of querying GBrain. If it is worth remembering, it is a brain page.
+Every piece of information you capture goes to **GBrain** via `gbrain put` (database + embeddings — searchable immediately). The **brain repo** at `$GBRAIN_HOME/brain/` holds markdown on disk (template, git, manual edits, export); **cron** runs `gbrain sync` so the DB stays aligned with files there. There is no parallel agent-workspace memory: no `MEMORY.md`, no `memory/YYYY-MM-DD.md`, and no reading those paths for recall.
 
 | Content kind | Where it lives in GBrain |
 |---|---|
@@ -96,6 +111,8 @@ The correct behavior is: write the page first (or call the search), then report 
 ## 3. Signal Detector — Always-On, Every Message
 
 This runs in parallel with your reply. It does NOT block — capture happens alongside thinking, not before it. But capture is non-optional.
+
+**If `$OPENCLAW_HOME/skills/signal-detector/SKILL.md` exists** (agent-relative: `skills/signal-detector/SKILL.md`), run that skill's detector on every inbound message and treat the steps below as the fallback minimum when it does not fire or is not installed. The bundled source lives at `$GBRAIN_INSTALL_DIR/skills/signal-detector/` until `gbrain skillpack install signal-detector --workspace "$OPENCLAW_WORKSPACE"` copies it to `$OPENCLAW_HOME/skills/`. Do not duplicate signal-detector content here.
 
 ### On every inbound message:
 
@@ -143,12 +160,12 @@ aliases: ["Display Variant", "alternate@email"] # optional but high-value for pe
 ---
 # Display Title
 
-> One-paragraph executive summary. If the reader gets nothing else, this is what they remember walking into an interaction with this entity. INCLUDE the category words ("car", "investor", "book") in this paragraph so keyword search can hit them — slugs and titles alone are NOT indexed by the chunker.
+> Executive summary (compiled truth, above the line). If the reader gets nothing else, this is what they remember walking into an interaction with this entity. INCLUDE the category words ("car", "investor", "book") in this paragraph so keyword search can hit them — slugs and titles alone are NOT indexed by the chunker. Rewrite this block when evidence changes; the timeline below is append-only.
 
 ## State
-- **Key field:** value             # one bullet per discrete fact — chunker indexes these as standalone hits
+- **Key field:** value [Source: User, direct message, YYYY-MM-DD HH:MM TZ]   # cite every bullet — chunker indexes these as standalone hits
 - **Owner / Related:** [Name](people/<slug>)   # cross-link goes HERE so backlinks works both ways
-- **Another:** value
+- **Conflict (if sources disagree):** Source A says X; Source B says Y. [Source: A] [Source: B]   # never silently pick one
 
 ## Open Threads
 - Active item the agent should flag if stale
@@ -156,9 +173,11 @@ aliases: ["Display Variant", "alternate@email"] # optional but high-value for pe
 ---
 
 ## Timeline
-- **YYYY-MM-DD** | Source — What happened, citing the source.
+- **YYYY-MM-DD** | What happened [Source: {who}, {channel/context}, {date} {time} {tz}]
 EOF
 ```
+
+**Compiled truth vs timeline:** The blockquote + `## State` are current synthesis (rewrite as evidence changes). `## Timeline` is append-only evidence — never edit old timeline rows. When sources conflict, note both in State with both citations.
 
 ### Why each field exists (and what breaks if you skip it):
 
@@ -171,11 +190,13 @@ EOF
 | Cross-links `[Name](people/<slug>)` | `gbrain backlinks people/<slug>` returns nothing → the "what does this person own / is related to" query path dies silently. |
 | `## Timeline` entry | The dream cycle can't reconcile temporally without dated entries. Repeated captures stack instead of consolidating. |
 
-### Why `gbrain put` (not raw file writes):
+### Why `gbrain put` (not raw file writes or workspace memory):
 
-A `gbrain put` call is **atomic**: it writes the markdown record AND the database row AND queues embeddings, all in one operation. The page is searchable via `gbrain search` the moment the command returns. Under the hood this invokes the `put_page` MCP operation; on the CLI the command is `gbrain put <slug>` reading content from stdin.
+A `gbrain put` call is **atomic**: it writes the markdown record into the **database** and queues embeddings. The page is searchable via `gbrain search` the moment the command returns. Under the hood this invokes `put_page`; on the CLI the command is `gbrain put <slug>` reading content from stdin.
 
-A raw `echo > .../people/<slug>.md` (when there even is a filesystem mirror) writes a file but does NOT update the database. The page is invisible to search until something runs `gbrain sync` later. **This is the silent-failure mode the user loses trust over.** Always use `gbrain put`. Never roll your own write path.
+**Never** use workspace `MEMORY.md` or `memory/*.md` for capture or recall. **Never** `read` those files to answer "what do you know about X?" — use `gbrain search` / `gbrain query` / `gbrain get` only.
+
+Cron (`gbrain sync --repo "$GBRAIN_HOME/brain" && gbrain embed --stale` every 5–15 min) ingests **markdown files on disk** into the DB. A raw `echo > .../people/<slug>.md` without a later `gbrain sync` leaves search stale. For agent captures, **always use `gbrain put`** — do not rely on echo-to-file alone.
 
 ### Slug conventions (locked):
 
@@ -188,7 +209,7 @@ A raw `echo > .../people/<slug>.md` (when there even is a filesystem mirror) wri
 - **Daily:** `YYYY-MM-DD` (`2026-05-15`)
 - **Personal:** `profile` for the canonical user truths page; descriptive slugs for any sub-pages (`personal/working-style`, `personal/communication-prefs`)
 
-Walk the resolver (`RESOLVER.md` or `AGENTS.md` at the brain repo root) to pick the right directory. Every directory should have a `README.md` that names what goes there and what does NOT. Read the resolver before filing.
+Walk the resolver at **`$GBRAIN_HOME/brain/RESOLVER.md`** or **`$GBRAIN_HOME/brain/AGENTS.md`** to pick the right directory. Every directory should have a `README.md` that names what goes there and what does NOT. Read the resolver before filing.
 
 ---
 
@@ -295,29 +316,33 @@ gbrain stats                        # page count + chunk count + types.
 gbrain orphans                      # pages with no inbound links (likely missing cross-links).
 
 # WRITING — this is how memory persists across sessions
-gbrain put <slug>              # write/update a page (content from stdin)
-                                    # writes record + DB row; embeddings queued automatically.
+gbrain put <slug>              # write/update page (DB + embeddings; search immediately)
 gbrain delete <slug>           # soft-delete (recoverable for 72h)
 
 # MAINTENANCE
 gbrain doctor --fast                # session health check (no DB-heavy work)
 gbrain doctor                       # full check (DB + embeddings + integrity)
 gbrain providers list               # confirm provider routing is live
-gbrain sync                         # ingest bulk markdown changes
-                                    # (rarely needed when using `gbrain put`)
+gbrain sync --repo $GBRAIN_HOME/brain   # disk → DB (cron every 5–15 min; safety net)
+gbrain embed --stale                # backfill embeddings after sync
 ```
 
-### Deployment paths (typical PureClaw / OpenClaw install — verify per environment):
+### Deployment paths (PureClaw / OpenClaw bootstrap — `configure-openclaw.sh` / `configure-gbrain.sh`)
 
 | What | Where |
 |---|---|
-| gbrain binary | `<bin-dir>/gbrain` (env-injecting wrapper) |
-| gbrain source | `<install-dir>/gbrain/` |
-| Brain data | `<data-dir>/gbrain/` (PGLite by default; Postgres via `DATABASE_URL`) |
-| Resolver (filing rules) | `<data-dir>/gbrain/brain/RESOLVER.md` or `AGENTS.md` |
-| Health snapshot | `<data-dir>/gbrain/last-doctor.json` |
+| OpenClaw home | `$OPENCLAW_HOME` → default `~/.openclaw` (`/root/.openclaw` in typical pods) |
+| Agent workspace | `$OPENCLAW_WORKSPACE` → default **`$OPENCLAW_HOME`** |
+| **This skill** | `$OPENCLAW_HOME/skills/pureclaw-gbrain/SKILL.md` (agent-relative: `skills/pureclaw-gbrain/SKILL.md`) |
+| Root `AGENTS.md` | `$OPENCLAW_HOME/AGENTS.md` — merge wake rules from `skills/pureclaw-gbrain/AGENTS.md` |
+| gbrain CLI + bundled skills source | `$GBRAIN_INSTALL_DIR` → default `/opt/gbrain` |
+| Brain data (DB) | `$GBRAIN_HOME` → default `$OPENCLAW_HOME/data/gbrain` (K8s may use `/data/gbrain`) |
+| Brain repo (markdown SoR) | `$GBRAIN_HOME/brain/` — pages as `people/foo.md`, `daily/YYYY-MM-DD.md`, etc. |
+| Resolver (filing rules) | `$GBRAIN_HOME/brain/RESOLVER.md` or `$GBRAIN_HOME/brain/AGENTS.md` |
+| Live sync | Cron: `gbrain sync --repo "$GBRAIN_HOME/brain" && gbrain embed --stale` (or `gbrain autopilot --install`) |
+| Health snapshot | `$GBRAIN_HOME/last-doctor.json` |
 
-There is no agent-workspace memory file in this design. Daily stream, user profile, and entity pages all live inside GBrain.
+There is no agent-workspace memory file in this design. Daily stream, user profile, and entity pages live under **`$GBRAIN_HOME/brain/`** and are queried through GBrain tools — not by reading `$OPENCLAW_HOME/MEMORY.md` or `$OPENCLAW_HOME/memory/*.md`.
 
 ### Provider routing (verify per deployment with `gbrain providers list`):
 
@@ -352,9 +377,27 @@ When the user speaks, you reply with context already loaded. Never "let me check
 
 ---
 
-## 9. Dream Cycle (nightly, autonomous)
+## 9. Production Operations (cron + sync + dream scheduling)
 
-Between 02:00–05:00 local, or whenever the user has been silent ≥4 hours, run the dream cycle. This is what separates you from every other agent.
+Operators schedule recurring work; agents execute the dream checklist (§10) when a job fires. **If `$OPENCLAW_HOME/skills/conventions/cron-via-minions.md` exists** (agent-relative: `skills/conventions/cron-via-minions.md`; installed by `gbrain skillpack install pureclaw-gbrain`), follow it — this section is the fallback when conventions were not installed.
+
+| Job | Cadence | How to run |
+|-----|---------|------------|
+| Live index | Every 5–15 min | **Shell cron** (zero LLM tokens): `gbrain sync --repo "$GBRAIN_HOME/brain" && gbrain embed --stale` — or `gbrain autopilot --install` if the operator uses autopilot |
+| Dream cycle | Nightly 02:00–05:00 local (or after ≥4h silence) | **Minion job** that runs the §10 checklist — not OpenClaw `agentTurn`. Postgres: `gbrain jobs submit <handler> --idempotency-key dream:$(date +%Y-%m-%dT%H) --params '{}'`. PGLite: same with `--follow` (inline; no background worker) |
+| Health (optional) | Daily | Operator: `gbrain doctor --fast` and `gbrain skillpack-check` |
+
+**Rules:**
+
+- **Deterministic work** (sync, embed, token refresh, scrape-and-write) → shell cron or `gbrain jobs submit shell` — never a full LLM gateway turn per tick.
+- **Judgment work** (dream consolidation, enrichment decisions) → Minion job with idempotency key per cycle slot so overlapping runs dedupe.
+- Do not paste a 20+ job catalog here — see the skillpack index at **`$GBRAIN_INSTALL_DIR/docs/GBRAIN_SKILLPACK.md`** (default `/opt/gbrain/docs/GBRAIN_SKILLPACK.md`) for full production schedules when you grow past PureClaw-only.
+
+---
+
+## 10. Dream Cycle (nightly, autonomous)
+
+Between 02:00–05:00 local, or whenever the user has been silent ≥4 hours, run the dream cycle (via §9 scheduling). This is what separates you from every other agent.
 
 ### Each dream pass:
 
@@ -378,7 +421,7 @@ The user goes to sleep. GBrain gets smarter. They wake. You are three moves ahea
 
 ---
 
-## 10. Connector Auto-Behaviors
+## 11. Connector Auto-Behaviors
 
 When a connector goes live via PureClaw Connect, you already know what to do. Don't wait to be told. Every connector flow ends at `gbrain put` — connectors are the input, GBrain is the output.
 
@@ -411,7 +454,7 @@ When a connector goes live via PureClaw Connect, you already know what to do. Do
 
 ---
 
-## 11. Anti-Pattern Library (do NOT repeat these failures)
+## 12. Anti-Pattern Library (do NOT repeat these failures)
 
 ### Case study: The Halcyon Labs capture failure
 
@@ -614,9 +657,18 @@ That is a Law III violation: narrating retrieval instead of running it. Correct 
 
 ---
 
-## 12. Quality Rules for Every Write
+## 13. Quality Rules for Every Write
 
-- **Inline citation on every fact:** `[Source: <where>, <date>]` — meeting, email, conversation, tweet, web URL.
+**Citation format** (every fact in **State** and **Timeline**, not only timeline):
+
+```
+[Source: {who}, {channel/context}, {date} {time} {tz}]
+```
+
+Examples: `[Source: User, direct message, 2026-05-15 2:30 PM PT]` · `[Source: Meeting notes "Product sync", 2026-05-12 10:00 AM PT]` · `[Source: email from Sarah Chen re Q2 deck, 2026-05-10 9:15 AM PT]` · social posts must include the **full URL**, not just @handle.
+
+**On conflict:** when two sources disagree, record both in State with both citations — never silently overwrite. Resolution priority (highest first): user direct statements → primary sources (meetings, emails, conversations) → enrichment APIs → web search → social media.
+
 - **Backlink on every entity mention** (Iron Law of brain hygiene): if `people/priya-raghavan` mentions Halcyon Labs, link to `companies/halcyon-labs`. The dream cycle reconciles any you miss, but write them right the first time.
 - **Notability gate:** recurring contacts, public figures, anything the user tracks, the user's own work — write the page. One-off mentions ("Bob said hi at the airport") — skip unless follow-up signal is plausible.
 - **Exact phrasing** for original thinking. Never paraphrase user ideas — quote them verbatim with a `> "..."` blockquote.
@@ -624,7 +676,33 @@ That is a Law III violation: narrating retrieval instead of running it. Correct 
 
 ---
 
-## 13. The Bar
+## 14. Related Architecture (skillpack map)
+
+This skill is the PureClaw/OpenClaw **memory protocol**. Two trees matter:
+
+- **OpenClaw home** (`$OPENCLAW_HOME`, default `~/.openclaw` / `/root/.openclaw`) — what the **agent** reads after install: `skills/pureclaw-gbrain/`, `skills/conventions/`, optional `skills/<name>/`. `$OPENCLAW_WORKSPACE` defaults to the same directory.
+- **GBrain install** (`$GBRAIN_INSTALL_DIR`, default `/opt/gbrain`) — operator docs and skillpack **source** before copy: `docs/`, `skills/`.
+
+| This skill | Where to read it |
+|------------|------------------|
+| §3–§4 capture + write pattern | `$GBRAIN_INSTALL_DIR/docs/guides/brain-agent-loop.md`, `entity-detection.md`, `compiled-truth.md`, `originals-folder.md` |
+| §5–§7 retrieval | `$GBRAIN_INSTALL_DIR/docs/guides/brain-first-lookup.md`, `search-modes.md` |
+| §8 wake + §10 dream | `$GBRAIN_INSTALL_DIR/docs/guides/operational-disciplines.md`, `cron-schedule.md` (reference) |
+| §9 production ops | `$OPENCLAW_HOME/skills/conventions/cron-via-minions.md` · `$GBRAIN_INSTALL_DIR/docs/guides/minions-shell-jobs.md`, `live-sync.md` |
+| §11 connectors | `$GBRAIN_INSTALL_DIR/docs/GBRAIN_SKILLPACK.md` integration index |
+| Skillpack index | `$GBRAIN_INSTALL_DIR/docs/GBRAIN_SKILLPACK.md` |
+| Optional: richer detector | **After install:** `$OPENCLAW_HOME/skills/signal-detector/SKILL.md` · **Source:** `$GBRAIN_INSTALL_DIR/skills/signal-detector/SKILL.md` |
+| Optional: day-one bootstrap | **After install:** `$OPENCLAW_HOME/skills/cold-start/SKILL.md` · **Source:** `$GBRAIN_INSTALL_DIR/skills/cold-start/SKILL.md` |
+
+Install extras into the workspace (not `/opt/gbrain` on the agent host):
+
+```bash
+gbrain skillpack install <name> --workspace "$OPENCLAW_WORKSPACE"
+```
+
+---
+
+## 15. The Bar
 
 This skill exists so the user can walk into any meeting, call, or decision already knowing:
 

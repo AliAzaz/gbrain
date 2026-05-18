@@ -746,6 +746,46 @@ if [[ -d "$BRAIN_CONTENT" ]] && [[ -n "$(find "$BRAIN_CONTENT" -maxdepth 3 -name
   log "Brain content imported."
 fi
 
+# -- Register brain repo paths (markdown-first SoR) ---------------------------
+if [[ -d "$BRAIN_CONTENT" ]]; then
+  log "Registering sources.local_path + sync.repo_path → $BRAIN_CONTENT"
+  GBRAIN_HOME="$BRAIN_DATA" bun run "$INSTALL_DIR/scripts/bootstrap/ensure-brain-path.ts" "$BRAIN_CONTENT" \
+    || log "warn: ensure-brain-path failed; put may be DB-only until paths are set"
+  gbrain sync --repo "$BRAIN_CONTENT" --no-embed 2>/dev/null || true
+fi
+
+# -- Live sync cron / autopilot -----------------------------------------------
+install_gbrain_sync_scheduler() {
+  local brain_path="$1"
+  [[ -d "$brain_path" ]] || return 0
+  if gbrain autopilot --install --repo "$brain_path" 2>/dev/null; then
+    log "Installed gbrain autopilot (sync + maintenance every 5 min)"
+    return 0
+  fi
+  local gbrain_bin
+  gbrain_bin="$(command -v gbrain)"
+  local cron_line="*/15 * * * * GBRAIN_HOME=$BRAIN_DATA $gbrain_bin sync --repo $brain_path && $gbrain_bin embed --stale"
+  if (crontab -l 2>/dev/null | grep -v 'gbrain sync' ; echo "$cron_line") | crontab - 2>/dev/null; then
+    log "Installed crontab live-sync (every 15 min)"
+  else
+    log "warn: could not install autopilot or crontab; register OpenClaw job gbrain-auto-sync manually"
+  fi
+}
+install_gbrain_sync_scheduler "$BRAIN_CONTENT"
+
+# -- OpenClaw workspace (skill + env) when detected ---------------------------
+_OPENCLAW_HOOK="$INSTALL_DIR/scripts/bootstrap/configure-openclaw.sh"
+if [[ -f "$_OPENCLAW_HOOK" ]] && { [[ -d "${OPENCLAW_HOME:-}" ]] || [[ -d "$HOME/.openclaw" ]] || [[ -f "$HOME/openclaw.json" ]]; }; then
+  # shellcheck disable=SC1090
+  bash "$_OPENCLAW_HOOK" || log "warn: configure-openclaw exited non-zero"
+  # configure-openclaw may relocate GBRAIN_HOME
+  BRAIN_DATA="${GBRAIN_HOME:-$BRAIN_DATA}"
+  BRAIN_CONTENT="$BRAIN_DATA/brain"
+  if [[ -d "$BRAIN_CONTENT" ]]; then
+    GBRAIN_HOME="$BRAIN_DATA" bun run "$INSTALL_DIR/scripts/bootstrap/ensure-brain-path.ts" "$BRAIN_CONTENT" 2>/dev/null || true
+  fi
+fi
+
 VERIFY_SCRIPT="$INSTALL_DIR/scripts/verify-gbrain-openrouter-env.sh"
 if [[ -x "$VERIFY_SCRIPT" ]]; then
   log "Running OpenRouter env verification..."
@@ -756,10 +796,15 @@ fi
 
 log "──────────────────────────────────────────"
 log "GBrain configure complete."
-log "  Install dir:  $INSTALL_DIR"
-log "  Brain dir:    $BRAIN_DATA"
-log "  Binary:       $(command -v gbrain)"
-log "  Version:      $(gbrain --version 2>/dev/null || echo unknown)"
-log "  Pages:        $(gbrain stats 2>/dev/null | grep -i 'page' | head -1 || echo 'gbrain stats failed')"
+log "  Install dir:   $INSTALL_DIR"
+log "  GBRAIN_HOME:   $BRAIN_DATA"
+log "  Brain repo:    $BRAIN_CONTENT"
+log "  sync.repo_path: $(gbrain config get sync.repo_path 2>/dev/null || echo unknown)"
+log "  sync.last_run:  $(gbrain config get sync.last_run 2>/dev/null || echo never)"
+log "  Binary:        $(command -v gbrain)"
+log "  Version:       $(gbrain --version 2>/dev/null || echo unknown)"
+log "  Pages:         $(gbrain stats 2>/dev/null | grep -i 'page' | head -1 || echo 'gbrain stats failed')"
 log "──────────────────────────────────────────"
-log "Next: run 'gbrain serve --http --port 3131' or 'gbrain serve' for MCP."
+log "Cron/autopilot syncs $BRAIN_CONTENT → DB; agent captures use gbrain put."
+log "Recall: gbrain search / query / get only (not workspace MEMORY.md)."
+log "Next: gbrain serve --http --port 3131  |  verify: docs/GBRAIN_VERIFY.md"
