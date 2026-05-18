@@ -85,7 +85,7 @@ echo ""
 if [[ $failures -gt 0 ]]; then
   echo "FAILED: $failures check(s). Fix:"
   echo "  1. Add deploy/k8s-gbrain-env.example.yaml env block to your Deployment"
-  echo "  2. Re-run bootstrap-gbrain.sh OR edit $config_json with openrouter routing"
+  echo "  2. Re-run scripts/bootstrap/configure-gbrain.sh (or bootstrap-gbrain.sh) OR edit $config_json with openrouter routing"
   echo "  3. source /etc/profile.d/gbrain.sh before gbrain embed"
   exit 1
 fi

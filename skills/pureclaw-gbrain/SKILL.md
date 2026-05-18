@@ -327,9 +327,11 @@ There is no agent-workspace memory file in this design. Daily stream, user profi
 | Chat (internal LLM calls) | `openrouter:anthropic/claude-sonnet-4.5` |
 | Query expansion | `openrouter:openai/gpt-4o-mini` |
 
-If any provider call fails with "missing OPENAI_API_KEY" or similar, the env drifted (embed is still on native OpenAI, not OpenRouter). Run `scripts/verify-gbrain-openrouter-env.sh` on the pod, then `scripts/patch-gbrain-openrouter-config.sh` (or re-run `bootstrap-gbrain.sh`). Ensure the k8s Deployment sets `GBRAIN_EMBEDDING_MODEL` and `OPENROUTER_API_KEY` — see `deploy/k8s-gbrain-env.example.yaml`. `gbrain config set embedding_model` writes the DB only and does **not** fix embed.
 
----
+
+   If any provider call fails with "missing OPENAI_API_KEY" or similar, the env drifted (embed is still on native OpenAI, not OpenRouter). **Do not run platform bootstrap from this skill** — provisioning is operator-owned. Tell the operator to set `OPENROUTER_API_KEY`, `GBRAIN_HOME`, and `GBRAIN_EMBEDDING_MODEL` (OpenRouter-prefixed route) on the container env, not via `kubectl exec export`. After env is fixed, run `gbrain providers test --touchpoint embedding --model <embed-model>`; if stats show unembedded chunks, run `gbrain embed --stale` (user approves cost). `gbrain config set embedding_model` writes the DB only and does **not** fix embed.
+
+   ---
 
 ## 8. Wake Protocol (every session start)
 

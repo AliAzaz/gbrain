@@ -55,9 +55,9 @@ bun -e '
 echo "Patched $config_path:"
 grep -E 'embedding_model|embedding_dimensions' "$config_path" || true
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -x "$SCRIPT_DIR/verify-gbrain-openrouter-env.sh" ]]; then
-  "$SCRIPT_DIR/verify-gbrain-openrouter-env.sh"
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -x "$_SCRIPT_DIR/verify-gbrain-openrouter-env.sh" ]]; then
+  "$_SCRIPT_DIR/verify-gbrain-openrouter-env.sh"
 fi
 
 if ! command -v gbrain >/dev/null 2>&1; then
