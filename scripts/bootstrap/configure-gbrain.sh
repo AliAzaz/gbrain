@@ -85,6 +85,15 @@ scaffold_brain_template() {
   local author_name="${GBRAIN_AUTHOR_NAME:-GBrain Bootstrap}"
   local author_email="${GBRAIN_AUTHOR_EMAIL:-bootstrap@gbrain.local}"
 
+  if [[ -e "$target" && ! -d "$target" ]]; then
+    fail "$target exists but is not a directory" 3
+  fi
+
+  if [[ -f "$target/.git" ]]; then
+    log "warn: removing stale file at $target/.git (blocks git init)"
+    rm -f "$target/.git"
+  fi
+
   if [[ -d "$target/.git" ]] || [[ -f "$target/RESOLVER.md" ]]; then
     log "Brain template already exists at $target (skipping scaffold)"
     return 0
@@ -93,10 +102,8 @@ scaffold_brain_template() {
   log "Scaffolding MECE brain template at $target..."
   mkdir -p "$target"
   (
-    cd "$target"
-    git init -q
-    git config user.name "$author_name"
-    git config user.email "$author_email"
+    unset GIT_DIR GIT_WORK_TREE
+    cd "$target" || exit 1
 
     # ---- top-level files ---------------------------------------------------
     cat > .gitignore <<'EOF'
@@ -584,15 +591,30 @@ If many items pile up here, it's a signal the schema needs to evolve."
     mkdir -p people/.raw companies/.raw
     touch people/.raw/.gitkeep companies/.raw/.gitkeep
 
-    # ---- initial commit ----------------------------------------------------
-    git add -A
-    git commit -q -m "init: MECE brain template scaffolded by bootstrap-gbrain.sh
+    # ---- optional git commit (files above are enough for gbrain import) ----
+    if command -v git >/dev/null 2>&1; then
+      [[ -f .git ]] && rm -f .git
+      if git -c safe.directory="$target" init -q 2>/dev/null; then
+        git -c safe.directory="$target" config user.name "$author_name"
+        git -c safe.directory="$target" config user.email "$author_email"
+        if git -c safe.directory="$target" add -A && \
+           git -c safe.directory="$target" commit -q -m "init: MECE brain template scaffolded by configure-gbrain.sh
 
 20 directories from docs/GBRAIN_RECOMMENDED_SCHEMA.md v0.5.0, each
 with a README.md resolver, plus top-level RESOLVER.md + schema.md +
-log.md + index.md and .raw/ sidecars under people/ + companies/."
-  )
-  log "Brain template scaffolded: 20 directories, 25 files, 1 commit."
+log.md + index.md and .raw/ sidecars under people/ + companies/."; then
+          :
+        else
+          log "warn: git commit skipped at $target (files still created)"
+        fi
+      else
+        log "warn: git init failed at $target (GIT_DIR set? not writable?); files still created"
+      fi
+    else
+      log "warn: git not installed; MECE files created without version control"
+    fi
+  ) || fail "failed to scaffold brain template at $target" 3
+  log "Brain template scaffolded at $target"
 }
 
 [[ -n "${OPENROUTER_API_KEY:-}" ]] || fail "OPENROUTER_API_KEY is required (https://openrouter.ai/keys)" 1
