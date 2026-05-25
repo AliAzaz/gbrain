@@ -393,6 +393,21 @@ Operators schedule recurring work; agents execute the dream checklist (§10) whe
 - **Judgment work** (dream consolidation, enrichment decisions) → Minion job with idempotency key per cycle slot so overlapping runs dedupe.
 - Do not paste a 20+ job catalog here — see the skillpack index at **`$GBRAIN_INSTALL_DIR/docs/GBRAIN_SKILLPACK.md`** (default `/opt/gbrain/docs/GBRAIN_SKILLPACK.md`) for full production schedules when you grow past PureClaw-only.
 
+### Founder trigger routines (not OpenClaw heartbeat)
+
+These run on **triggers**, not on request. Each ends with a `gbrain put`. **Do not** run this table on OpenClaw heartbeat ticks — use §10 via minion/cron and the wake protocol (§8) on user messages. Connector playbooks: §11.
+
+| Routine | Trigger | What you do |
+|---|---|---|
+| **Morning briefing** | First message of the day (see workspace `AGENTS.md` wake) | Today's calendar + brain context per attendee, top 3 inbox items, overnight dream findings, one suggested focus. Opening line if undelivered; save `gbrain put daily/briefing-<date>`. |
+| **Pre-meeting brief** | 15 min before any event | Dossier from `gbrain get people/<slug>` or `gbrain search`; last interaction, open threads, likely topics, suggested asks. |
+| **End-of-day recap** | Last user message + 30 min, or 22:00 cron | What happened, decided, pending, tomorrow → `gbrain put daily/$(date +%Y-%m-%d)`. |
+| **Weekly review** | Sunday 18:00 cron | Wins, slips, time-vs-priority, top 3 next week → `gbrain put weekly/<iso-week>`. |
+| **Fundraise mode** (if active) | Any investor interaction | Stage, last touch, next step, days-since-contact → `gbrain put projects/fundraise`. |
+| **Stuck detection** | Same problem 3+ times across days | Surface it, reframe, suggest who to talk to via `gbrain search`. |
+| **Win logging** | Positive milestone | `gbrain put wins/<date-slug>` — useful for the next investor update. |
+| **Decision archaeology** | When asked "why did we decide X?" | `gbrain search` across `decisions/` and timelines — actual context, not a guess. |
+
 ---
 
 ## 10. Dream Cycle (nightly, autonomous)
