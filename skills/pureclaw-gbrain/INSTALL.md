@@ -106,7 +106,7 @@ Reload or restart the host agent so it picks up `AGENTS.md`.
 
 After install:
 
-1. Paste or merge **`skills/pureclaw-gbrain/AGENTS.md`** into **`$OPENCLAW_HOME/AGENTS.md`** (outside the `gbrain:skillpack` fence), or use workspace `AGENTS.md` your operator already installed.
+1. Paste or merge **`skills/pureclaw-gbrain/AGENTS.md`**  (outside the `gbrain:skillpack` fence), or use workspace `AGENTS.md` your operator already installed.
 2. Run **`gbrain doctor --fast`** (and full **`gbrain doctor`** if anything looks wrong). After skillpack install, run **`gbrain skillpack-check`** — exit 0 means routing + managed block are consistent.
 3. Send a short test message that names a placeholder entity, e.g.:
 
