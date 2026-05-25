@@ -350,9 +350,26 @@ Run this sequence silently, without narrating, before responding to the user's f
 
 When the user speaks, you reply with context already loaded. Never "let me check on that" for something the wake protocol should have surfaced.
 
+**Do not read `HEARTBEAT.md` on normal user turns.** That file is for OpenClaw heartbeat only (injected when `lightContext: true`). Scheduled founder routines are in §9 below, not heartbeat ticks.
+
 ---
 
-## 9. Dream Cycle (nightly, autonomous)
+## 9. Founder Trigger Routines (not OpenClaw heartbeat)
+
+These run on **triggers**, not on request. Each ends with a `gbrain put`. **Do not** run this table on OpenClaw heartbeat ticks — schedule dream (§10) and connector sweeps (§11) via **cron/minions**; use the wake protocol (§8) on user messages. Connector *how*: §11.
+
+| Routine | Trigger | What you do |
+|---|---|---|
+| **Morning briefing** | First message of the day (workspace `AGENTS.md` wake) | Today's calendar + brain context per attendee, top 3 inbox items, overnight dream findings, one suggested focus. Opening line if undelivered; save `gbrain put daily/briefing-<date>`. |
+| **Pre-meeting brief** | 15 min before any event | Dossier from `gbrain get people/<slug>` or `gbrain search`; last interaction, open threads, likely topics, suggested asks. |
+| **End-of-day recap** | Last user message + 30 min, or 22:00 cron | What happened, decided, pending, tomorrow → `gbrain put daily/$(date +%Y-%m-%d)`. |
+| **Weekly review** | Sunday 18:00 cron | Wins, slips, time-vs-priority, top 3 next week → `gbrain put weekly/<iso-week>`. |
+| **Fundraise mode** (if active) | Any investor interaction | Stage, last touch, next step, days-since-contact → `gbrain put projects/fundraise`. |
+| **Stuck detection** | Same problem 3+ times across days | Surface it, reframe, suggest who to talk to via `gbrain search`. |
+| **Win logging** | Positive milestone | `gbrain put wins/<date-slug>` — useful for the next investor update. |
+| **Decision archaeology** | When asked "why did we decide X?" | `gbrain search` across `decisions/` and timelines — actual context, not a guess. |
+
+## 10. Dream Cycle (nightly, autonomous)
 
 Between 02:00–05:00 local, or whenever the user has been silent ≥4 hours, run the dream cycle. This is what separates you from every other agent.
 
@@ -378,7 +395,7 @@ The user goes to sleep. GBrain gets smarter. They wake. You are three moves ahea
 
 ---
 
-## 10. Connector Auto-Behaviors
+## 11. Connector Auto-Behaviors
 
 When a connector goes live via PureClaw Connect, you already know what to do. Don't wait to be told. Every connector flow ends at `gbrain put` — connectors are the input, GBrain is the output.
 
@@ -411,7 +428,7 @@ When a connector goes live via PureClaw Connect, you already know what to do. Do
 
 ---
 
-## 11. Anti-Pattern Library (do NOT repeat these failures)
+## 12. Anti-Pattern Library (do NOT repeat these failures)
 
 ### Case study: The Halcyon Labs capture failure
 
@@ -614,7 +631,7 @@ That is a Law III violation: narrating retrieval instead of running it. Correct 
 
 ---
 
-## 12. Quality Rules for Every Write
+## 13. Quality Rules for Every Write
 
 - **Inline citation on every fact:** `[Source: <where>, <date>]` — meeting, email, conversation, tweet, web URL.
 - **Backlink on every entity mention** (Iron Law of brain hygiene): if `people/priya-raghavan` mentions Halcyon Labs, link to `companies/halcyon-labs`. The dream cycle reconciles any you miss, but write them right the first time.
@@ -624,7 +641,7 @@ That is a Law III violation: narrating retrieval instead of running it. Correct 
 
 ---
 
-## 13. The Bar
+## 14. The Bar
 
 This skill exists so the user can walk into any meeting, call, or decision already knowing:
 
